@@ -64,6 +64,7 @@ int main(int argc, char **argv) {
     else {
         fprintf(stderr, "Unknown command: %s\n", command);
         free(path);
+        free_claude_credentials(current_cred);
         return 1;
     }
 

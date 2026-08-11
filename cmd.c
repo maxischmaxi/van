@@ -142,6 +142,7 @@ int run_add(ClaudeCredentials *current_cred) {
     char *add_prompt = malloc(needed + 1);
     if (!add_prompt) {
         printf("failed to allocate prompt string\n");
+        free(email);
         return -1;
     }
     snprintf(add_prompt, needed + 1,
@@ -150,11 +151,13 @@ int run_add(ClaudeCredentials *current_cred) {
              email);
 
     bool should_add = prompt_yes_no(add_prompt);
+    free(add_prompt);
 
     if (should_add) {
         InternalAuth *existing_auth = get_auth_by_name(email);
 
         if (existing_auth) {
+            free_internal_auth(existing_auth);
             free(existing_auth);
             bool should_overwrite =
                 prompt_yes_no("Account with this email already exists. do you "
@@ -365,19 +368,23 @@ int run_swap(ClaudeCredentials *current_cred, char *path) {
     printf("Swapped config successfully.\n");
 
     free(id);
+    free_claude_credentials(current_cred);
     for (size_t i = 0; i < auth_len; i++) {
         free_internal_auth(auths[i]);
         free(auths[i]);
     }
     free(auths);
+    free(path);
     return 0;
 
 cleanup_fail:
     free(id);
+    free_claude_credentials(current_cred);
     for (size_t i = 0; i < auth_len; i++) {
         free_internal_auth(auths[i]);
         free(auths[i]);
     }
     free(auths);
+    free(path);
     return 1;
 }

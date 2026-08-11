@@ -312,7 +312,6 @@ char *fetch_account_email(const char *access_token) {
 
     CURLcode res = curl_easy_perform(curl);
 
-    // HTTP-Statuscode prüfen
     long http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
