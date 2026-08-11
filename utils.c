@@ -180,13 +180,18 @@ char **str_split(const char *s, char delim, size_t *out_count) {
 
 char *str_array_to_str(char **elements, size_t count, char *delimiter) {
     char *buf = malloc(1);
+    if (!buf) {
+        return NULL;
+    }
+
     buf[0] = '\0';
     size_t len = 0;
     size_t cap = 1;
 
     for (size_t i = 0; i < count; i++) {
+        const char *elem = elements[i] ? elements[i] : "";
         const char *sep = i > 0 ? delimiter : "";
-        size_t add = strlen(sep) + strlen(elements[i]);
+        size_t add = strlen(sep) + strlen(elem);
 
         if (len + add + 1 > cap) {
             while (len + add + 1 > cap)
@@ -201,8 +206,8 @@ char *str_array_to_str(char **elements, size_t count, char *delimiter) {
 
         strcpy(buf + len, sep);
         len += strlen(sep);
-        strcpy(buf + len, elements[i]);
-        len += strlen(elements[i]);
+        strcpy(buf + len, elem);
+        len += strlen(elem);
     }
 
     return buf;

@@ -52,20 +52,25 @@ int main(int argc, char **argv) {
 
     const char *command = argv[1];
 
+    int rc;
     if (strcmp(command, "list") == 0)
-        return run_list(current_cred);
-    if (strcmp(command, "add") == 0)
-        return run_add(current_cred);
-    if (strcmp(command, "delete") == 0)
-        return run_delete(current_cred);
-    if (strcmp(command, "show") == 0)
-        return run_show(current_cred);
-    if (strcmp(command, "rename") == 0)
-        return run_rename(current_cred);
-    if (strcmp(command, "swap") == 0)
-        return run_swap(current_cred, path);
+        rc = run_list(current_cred);
+    else if (strcmp(command, "add") == 0)
+        rc = run_add(current_cred);
+    else if (strcmp(command, "delete") == 0)
+        rc = run_delete(current_cred);
+    else if (strcmp(command, "show") == 0)
+        rc = run_show(current_cred);
+    else if (strcmp(command, "rename") == 0)
+        rc = run_rename(current_cred);
+    else if (strcmp(command, "swap") == 0)
+        return run_swap(current_cred, path);  // swap gibt path selbst frei
+    else {
+        fprintf(stderr, "Unknown command: %s\n", command);
+        free(path);
+        return 1;
+    }
 
-    fprintf(stderr, "Unknown command: %s\n", command);
     free(path);
-    return 1;
+    return rc;
 }

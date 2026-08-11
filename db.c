@@ -107,10 +107,11 @@ uint32_t delete_auth(uint64_t id) {
     sqlite3_bind_int64(stmt, 1, (sqlite3_int64)id);
 
     int rc = sqlite3_step(stmt);
+    int changes = sqlite3_changes(db);
     sqlite3_finalize(stmt);
     sqlite3_close(db);
 
-    return rc == SQLITE_DONE ? 1 : 0;
+    return (rc == SQLITE_DONE && changes > 0) ? 1 : 0;
 }
 
 InternalAuth **get_all_claude_oauth_configs(size_t *out_size) {
@@ -152,24 +153,19 @@ InternalAuth **get_all_claude_oauth_configs(size_t *out_size) {
 
         memset(auth, 0, sizeof(InternalAuth));
 
-        int id = sqlite3_column_int64(stmt, 0);
-        const unsigned char *name = sqlite3_column_text(stmt, 1);
-        const unsigned char *access_token = sqlite3_column_text(stmt, 2);
-        const unsigned char *refresh_token = sqlite3_column_text(stmt, 3);
-        sqlite3_int64 expires_at = sqlite3_column_int64(stmt, 4);
-        sqlite3_int64 refresh_token_expires_at = sqlite3_column_int64(stmt, 5);
-        const unsigned char *scopes_str = sqlite3_column_text(stmt, 6);
-        const unsigned char *subscription_type = sqlite3_column_text(stmt, 7);
-        const unsigned char *rate_limit_tier = sqlite3_column_text(stmt, 8);
+        auth->id = sqlite3_column_int64(stmt, 0);
+        auth->name = dup_str((const char *)sqlite3_column_text(stmt, 1));
+        auth->accessToken = dup_str((const char *)sqlite3_column_text(stmt, 2));
+        auth->refreshToken =
+            dup_str((const char *)sqlite3_column_text(stmt, 3));
+        auth->expiresAt = sqlite3_column_int64(stmt, 4);
+        auth->refreshTokenExpiresAt = sqlite3_column_int64(stmt, 5);
+        auth->subscriptionType =
+            dup_str((const char *)sqlite3_column_text(stmt, 7));
+        auth->rateLimitTier =
+            dup_str((const char *)sqlite3_column_text(stmt, 8));
 
-        auth->id = id;
-        auth->name = dup_str((const char *)name);
-        auth->accessToken = dup_str((const char *)access_token);
-        auth->refreshToken = dup_str((const char *)refresh_token);
-        auth->expiresAt = expires_at;
-        auth->refreshTokenExpiresAt = refresh_token_expires_at;
-        auth->rateLimitTier = dup_str((const char *)rate_limit_tier);
-        auth->subscriptionType = dup_str((const char *)subscription_type);
+        const unsigned char *scopes_str = sqlite3_column_text(stmt, 6);
 
         if (scopes_str) {
             char *scopes_copy = dup_str((const char *)scopes_str);
@@ -240,83 +236,6 @@ uint64_t insert_auth(ClaudeAiOauth auth, char *name) {
     return (uint64_t)id;
 }
 
-InternalAuth *get_auth_by_name(char *name) {
-    sqlite3 *db = get_db();
-    if (db == NULL) {
-        return NULL;
-    }
-
-    InternalAuth **result = malloc(sizeof(InternalAuth *));
-    if (!result) {
-        sqlite3_close(db);
-        return NULL;
-    }
-
-    const char *sql = "SELECT id, access_token, refresh_token, "
-                      "expires_at, refresh_token_expires_at, scopes, "
-                      "subscription_type, rate_limit_tier FROM "
-                      "claude_auth_credentials WHERE name = ?";
-    sqlite3_stmt *stmt;
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        sqlite3_close(db);
-        return NULL;
-    }
-
-    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
-    size_t idx = 0;
-
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        InternalAuth *auth = malloc(sizeof(InternalAuth));
-
-        if (!auth)
-            goto cleanup;
-
-        memset(auth, 0, sizeof(InternalAuth));
-
-        int id = sqlite3_column_int64(stmt, 0);
-        const unsigned char *access_token = sqlite3_column_text(stmt, 1);
-        const unsigned char *refresh_token = sqlite3_column_text(stmt, 2);
-        sqlite3_int64 expires_at = sqlite3_column_int64(stmt, 3);
-        sqlite3_int64 refresh_token_expires_at = sqlite3_column_int64(stmt, 4);
-        const unsigned char *scopes_str = sqlite3_column_text(stmt, 5);
-        const unsigned char *subscription_type = sqlite3_column_text(stmt, 6);
-        const unsigned char *rate_limit_tier = sqlite3_column_text(stmt, 7);
-
-        auth->id = id;
-        auth->name = name;
-        auth->accessToken = dup_str((const char *)access_token);
-        auth->refreshToken = dup_str((const char *)refresh_token);
-        auth->expiresAt = expires_at;
-        auth->refreshTokenExpiresAt = refresh_token_expires_at;
-        auth->rateLimitTier = dup_str((const char *)rate_limit_tier);
-        auth->subscriptionType = dup_str((const char *)subscription_type);
-
-        if (scopes_str) {
-            char *scopes_copy = dup_str((const char *)scopes_str);
-            if (scopes_copy) {
-                auth->scopes = str_split(scopes_copy, ',', &auth->scopes_count);
-                free(scopes_copy);
-            }
-        }
-
-        result[idx++] = auth;
-    }
-
-    sqlite3_finalize(stmt);
-    sqlite3_close(db);
-    return result[0];
-
-cleanup:
-    for (size_t i = 0; i < idx; i++) {
-        free_internal_auth(result[i]);
-        free(result[i]);
-    }
-    free(result);
-    sqlite3_finalize(stmt);
-    sqlite3_close(db);
-    return NULL;
-}
-
 uint32_t rename_auth(uint64_t id, char *name) {
     sqlite3 *db = get_db();
     if (db == NULL) {
@@ -337,11 +256,11 @@ uint32_t rename_auth(uint64_t id, char *name) {
     sqlite3_bind_int64(stmt, 2, (sqlite3_int64)id);
 
     int rc = sqlite3_step(stmt);
+    int changes = sqlite3_changes(db);
     sqlite3_finalize(stmt);
     sqlite3_close(db);
 
-    if (rc != SQLITE_DONE) {
-        fprintf(stderr, "failed to check step done\n");
+    if (rc != SQLITE_DONE || changes == 0) {
         return 0;
     }
 
@@ -378,23 +297,18 @@ InternalAuth *get_auth_by_id(uint64_t id) {
         memset(auth, 0, sizeof(InternalAuth));
 
         auth->id = sqlite3_column_int64(stmt, 0);
-        const unsigned char *name = sqlite3_column_text(stmt, 1);
-        const unsigned char *access_token = sqlite3_column_text(stmt, 2);
-        const unsigned char *refresh_token = sqlite3_column_text(stmt, 3);
-        sqlite3_int64 expires_at = sqlite3_column_int64(stmt, 4);
-        sqlite3_int64 refresh_token_expires_at = sqlite3_column_int64(stmt, 5);
+        auth->expiresAt = sqlite3_column_int64(stmt, 4);
+        auth->refreshTokenExpiresAt = sqlite3_column_int64(stmt, 5);
+        auth->name = dup_str((const char *)sqlite3_column_text(stmt, 1));
+        auth->accessToken = dup_str((const char *)sqlite3_column_text(stmt, 2));
+        auth->refreshToken =
+            dup_str((const char *)sqlite3_column_text(stmt, 3));
+        auth->subscriptionType =
+            dup_str((const char *)sqlite3_column_text(stmt, 7));
+        auth->rateLimitTier =
+            dup_str((const char *)sqlite3_column_text(stmt, 8));
+
         const unsigned char *scopes_str = sqlite3_column_text(stmt, 6);
-        const unsigned char *subscription_type = sqlite3_column_text(stmt, 7);
-        const unsigned char *rate_limit_tier = sqlite3_column_text(stmt, 8);
-
-        auth->name = dup_str((const char *)name);
-        auth->accessToken = dup_str((const char *)access_token);
-        auth->refreshToken = dup_str((const char *)refresh_token);
-        auth->expiresAt = expires_at;
-        auth->refreshTokenExpiresAt = refresh_token_expires_at;
-        auth->subscriptionType = dup_str((const char *)subscription_type);
-        auth->rateLimitTier = dup_str((const char *)rate_limit_tier);
-
         if (scopes_str) {
             char *scopes_copy = dup_str((const char *)scopes_str);
             if (scopes_copy) {

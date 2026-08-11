@@ -52,10 +52,13 @@ int run_list(ClaudeCredentials *current_cred) {
 
     for (size_t i = 0; i < auth_len; i++) {
         char id_buf[32];
-        size_t id_len = (size_t)snprintf(id_buf, sizeof(id_buf), "%zu", i + 1);
+        size_t id_len = (size_t)snprintf(id_buf, sizeof(id_buf), "%lld",
+                                          (long long)auths[i]->id);
         if (id_len > w_id)
             w_id = id_len;
 
+        if (safe_len(auths[i]->name) > w_name)
+            w_name = safe_len(auths[i]->name);
         if (safe_len(auths[i]->accessToken) > w_token)
             w_token = safe_len(auths[i]->accessToken);
         if (safe_len(auths[i]->refreshToken) > w_refresh)
@@ -95,7 +98,7 @@ int run_list(ClaudeCredentials *current_cred) {
 
     for (size_t i = 0; i < auth_len; i++) {
         char id_buf[32];
-        snprintf(id_buf, sizeof(id_buf), "%zu", i + 1);
+        snprintf(id_buf, sizeof(id_buf), "%lld", (long long)auths[i]->id);
         print_col(id_buf, w_id);
         printf("  ");
 
@@ -135,8 +138,14 @@ int run_add(ClaudeCredentials *current_cred) {
         char *name = prompt("Please add a name for this config: ");
 
         uint64_t id = insert_auth(current_cred->claudeAiOauth, name);
+        if (id == 0) {
+            printf("failed to add new claude credentials");
+            free(name);
+            return -1;
+        }
 
-        printf("inserted id: %zu\n", id);
+        printf("inserted id: %llu\n", (unsigned long long)id);
+        free(name);
     }
 
     free_claude_credentials(current_cred);
@@ -156,7 +165,8 @@ int run_delete(ClaudeCredentials *current_cred) {
     printf("Delete one of the following credentials:\n\n");
 
     for (size_t i = 0; i < auth_len; i++) {
-        printf("%zu - %s\n", i + 1, auths[i]->name ? auths[i]->name : "(none)");
+        printf("%lld - %s\n", (long long)auths[i]->id,
+               auths[i]->name ? auths[i]->name : "(none)");
     }
 
     printf("\n");
@@ -228,7 +238,8 @@ int run_rename(ClaudeCredentials *current_cred) {
     printf("Rename one of the following credentials:\n\n");
 
     for (size_t i = 0; i < auth_len; i++) {
-        printf("%zu - %s\n", i + 1, auths[i]->name ? auths[i]->name : "(none)");
+        printf("%lld - %s\n", (long long)auths[i]->id,
+               auths[i]->name ? auths[i]->name : "(none)");
     }
 
     printf("\n");
@@ -260,6 +271,7 @@ int run_rename(ClaudeCredentials *current_cred) {
 
     if (rename_auth((uint64_t)val, newName) == 0) {
         fprintf(stderr, "Failed to rename database entry.\n");
+        free(newName);
         goto cleanup_fail;
     }
 
@@ -278,7 +290,6 @@ int run_rename(ClaudeCredentials *current_cred) {
 
 cleanup_fail:
     free(id);
-    free(newName);
     free_claude_credentials(current_cred);
     for (size_t i = 0; i < auth_len; i++) {
         free_internal_auth(auths[i]);
@@ -331,20 +342,15 @@ int run_swap(ClaudeCredentials *current_cred, char *path) {
         goto cleanup_fail;
     }
 
-    // Ausgewählten Eintrag aus der DB laden
     InternalAuth *internal_auth = get_auth_by_id((uint64_t)val);
     if (!internal_auth) {
         fprintf(stderr, "Failed to find the selected credentials.\n");
         goto cleanup_fail;
     }
 
-    // ClaudeCredentials auf dem Stack bauen (deep copy aus InternalAuth)
-    // mcpOAuth wird von current_cred geborgt (nicht freigegeben)
     ClaudeCredentials new_cred = {0};
-    new_cred.claudeAiOauth.accessToken =
-        dup_str(internal_auth->accessToken);
-    new_cred.claudeAiOauth.refreshToken =
-        dup_str(internal_auth->refreshToken);
+    new_cred.claudeAiOauth.accessToken = dup_str(internal_auth->accessToken);
+    new_cred.claudeAiOauth.refreshToken = dup_str(internal_auth->refreshToken);
     new_cred.claudeAiOauth.expiresAt = internal_auth->expiresAt;
     new_cred.claudeAiOauth.refreshTokenExpiresAt =
         internal_auth->refreshTokenExpiresAt;
@@ -353,13 +359,11 @@ int run_swap(ClaudeCredentials *current_cred, char *path) {
     new_cred.claudeAiOauth.rateLimitTier =
         dup_str(internal_auth->rateLimitTier);
 
-    // Scopes deep copy
     if (internal_auth->scopes && internal_auth->scopes_count > 0) {
         new_cred.claudeAiOauth.scopes =
             malloc(internal_auth->scopes_count * sizeof(char *));
         if (new_cred.claudeAiOauth.scopes) {
-            new_cred.claudeAiOauth.scopes_count =
-                internal_auth->scopes_count;
+            new_cred.claudeAiOauth.scopes_count = internal_auth->scopes_count;
             for (size_t i = 0; i < internal_auth->scopes_count; i++) {
                 new_cred.claudeAiOauth.scopes[i] =
                     dup_str(internal_auth->scopes[i]);
@@ -367,13 +371,10 @@ int run_swap(ClaudeCredentials *current_cred, char *path) {
         }
     }
 
-    // mcpOAuth von current_cred borgen (shallow copy, NICHT freigeben)
     new_cred.mcpOAuth = current_cred->mcpOAuth;
 
-    // In Datei schreiben
     int rc = write_config_to_file(&new_cred, path);
 
-    // Deep-copied Strings freigeben (aber NICHT mcpOAuth!)
     free(new_cred.claudeAiOauth.accessToken);
     free(new_cred.claudeAiOauth.refreshToken);
     free(new_cred.claudeAiOauth.subscriptionType);
@@ -382,7 +383,6 @@ int run_swap(ClaudeCredentials *current_cred, char *path) {
         free(new_cred.claudeAiOauth.scopes[i]);
     free(new_cred.claudeAiOauth.scopes);
 
-    // InternalAuth freigeben
     free_internal_auth(internal_auth);
     free(internal_auth);
 
