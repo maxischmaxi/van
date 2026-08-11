@@ -48,4 +48,5 @@ ClaudeCredentials *parse_claude_credentials(cJSON *root);
 void free_claude_credentials(ClaudeCredentials *c);
 void free_claude_ai_oauth(ClaudeAiOauth *c);
 int write_config_to_file(ClaudeCredentials *creds, char *path);
+char *fetch_account_email(const char *access_token);
 #endif

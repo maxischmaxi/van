@@ -1,7 +1,7 @@
 # ===== Werkzeuge =====
 CC      := cc
 CFLAGS  := -std=c11 -Wall -Wextra -Wpedantic -g -O0
-LDFLAGS :=
+LDFLAGS := -lcurl
 
 # ===== Dateien =====
 TARGET := main

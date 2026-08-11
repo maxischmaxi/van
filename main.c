@@ -34,7 +34,6 @@ int main(int argc, char **argv) {
     const char *list = "    list        List all stored credentials\n";
     const char *add =
         "    add         Add the current credentials to the database\n";
-    const char *rename = "    rename      Rename a existing database entry\n";
     const char *swap =
         "    swap        Swap your current config with a different one\n";
 
@@ -43,7 +42,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Commands:\n");
         fprintf(stderr, "%s", list);
         fprintf(stderr, "%s", add);
-        fprintf(stderr, "%s", rename);
         fprintf(stderr, "%s", swap);
         fprintf(stderr, "Your command: %s", *argv);
         free(path);
@@ -54,17 +52,15 @@ int main(int argc, char **argv) {
 
     int rc;
     if (strcmp(command, "list") == 0)
-        rc = run_list(current_cred);
+        rc = run_list();
     else if (strcmp(command, "add") == 0)
         rc = run_add(current_cred);
     else if (strcmp(command, "delete") == 0)
-        rc = run_delete(current_cred);
+        rc = run_delete();
     else if (strcmp(command, "show") == 0)
         rc = run_show(current_cred);
-    else if (strcmp(command, "rename") == 0)
-        rc = run_rename(current_cred);
     else if (strcmp(command, "swap") == 0)
-        return run_swap(current_cred, path);  // swap gibt path selbst frei
+        return run_swap(current_cred, path); // swap gibt path selbst frei
     else {
         fprintf(stderr, "Unknown command: %s\n", command);
         free(path);
@@ -72,5 +68,6 @@ int main(int argc, char **argv) {
     }
 
     free(path);
+    free_claude_credentials(current_cred);
     return rc;
 }

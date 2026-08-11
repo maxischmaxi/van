@@ -322,3 +322,61 @@ InternalAuth *get_auth_by_id(uint64_t id) {
     sqlite3_close(db);
     return auth;
 }
+
+InternalAuth *get_auth_by_name(char *name) {
+    if (!name) return NULL;
+
+    sqlite3 *db = get_db();
+    if (db == NULL) {
+        fprintf(stderr, "failed to get database\n");
+        return NULL;
+    }
+
+    const char *sql = "SELECT id, name, access_token, refresh_token, "
+                      "expires_at, refresh_token_expires_at, scopes, "
+                      "subscription_type, rate_limit_tier "
+                      "FROM claude_auth_credentials WHERE name = ?";
+    sqlite3_stmt *stmt;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return NULL;
+    }
+
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+
+    InternalAuth *auth = NULL;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        auth = malloc(sizeof(InternalAuth));
+        if (!auth) {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return NULL;
+        }
+        memset(auth, 0, sizeof(InternalAuth));
+
+        auth->id = sqlite3_column_int64(stmt, 0);
+        auth->expiresAt = sqlite3_column_int64(stmt, 4);
+        auth->refreshTokenExpiresAt = sqlite3_column_int64(stmt, 5);
+        auth->name = dup_str((const char *)sqlite3_column_text(stmt, 1));
+        auth->accessToken = dup_str((const char *)sqlite3_column_text(stmt, 2));
+        auth->refreshToken =
+            dup_str((const char *)sqlite3_column_text(stmt, 3));
+        auth->subscriptionType =
+            dup_str((const char *)sqlite3_column_text(stmt, 7));
+        auth->rateLimitTier =
+            dup_str((const char *)sqlite3_column_text(stmt, 8));
+
+        const unsigned char *scopes_str = sqlite3_column_text(stmt, 6);
+        if (scopes_str) {
+            char *scopes_copy = dup_str((const char *)scopes_str);
+            if (scopes_copy) {
+                auth->scopes = str_split(scopes_copy, ',', &auth->scopes_count);
+                free(scopes_copy);
+            }
+        }
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return auth;
+}
