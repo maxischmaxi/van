@@ -261,7 +261,7 @@ char *str_array_to_str(char **elements, size_t count, char *delimiter) {
     return buf;
 }
 
-cJSON *parse_credentials_file(char *path) {
+cJSON *parse_json_file(char *path) {
     char *buf;
     size_t size;
 

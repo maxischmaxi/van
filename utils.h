@@ -12,7 +12,7 @@ bool is_file(const char *path);
 char *dup_str(const char *s);
 char **str_split(const char *s, char delim, size_t *out_count);
 char *str_array_to_str(char **elements, size_t count, char *delimiter);
-cJSON *parse_credentials_file(char *path);
+cJSON *parse_json_file(char *path);
 bool prompt_yes_no(const char *msg);
 char *prompt(const char *msg);
 char *ms_to_timestamp(int64_t timestamp, char *buf, size_t len);
