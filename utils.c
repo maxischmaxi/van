@@ -1,4 +1,3 @@
-#define _POSIX_C_SOURCE 200809L
 #include "utils.h"
 #include "cJSON.h"
 #include <ctype.h>
@@ -9,12 +8,57 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
+size_t safe_len(const char *s) { return s ? strlen(s) : 0; }
+
+int int64_len(int64_t val) {
+    char buf[32];
+    return snprintf(buf, sizeof(buf), "%lld", (long long)val);
+}
+
+static ssize_t utils_getline(char **lineptr, size_t *n, FILE *stream) {
+    if (!lineptr || !n || !stream)
+        return -1;
+
+    const size_t CHUNK = 128;
+    size_t pos = 0;
+    int c;
+
+    /* Puffer beim ersten Aufruf initial allozieren */
+    if (*lineptr == NULL || *n == 0) {
+        *n = CHUNK;
+        *lineptr = malloc(*n);
+        if (!*lineptr)
+            return -1;
+    }
+
+    while ((c = fgetc(stream)) != EOF) {
+        if (pos + 1 >= *n) { /* Platz für Zeichen + '\0' */
+            size_t newcap = *n * 2;
+            char *tmp = realloc(*lineptr, newcap);
+            if (!tmp)
+                return -1;
+            *lineptr = tmp;
+            *n = newcap;
+        }
+        (*lineptr)[pos++] = (char)c;
+        if (c == '\n')
+            break;
+    }
+
+    if (pos == 0 && c == EOF) /* nichts gelesen -> echtes EOF */
+        return -1;
+
+    (*lineptr)[pos] = '\0';
+    return (ssize_t)pos;
+}
+
 static const char *home(void) {
-    const char *home = getenv("HOME");
-    if (home && home[0] != '\0') {
-        return home;
+    const char *homedir = getenv("HOME");
+    if (homedir && homedir[0] != '\0') {
+        return homedir;
     }
     struct passwd *pw = getpwuid(getuid());
     if (pw) {
@@ -56,6 +100,10 @@ int read_file(const char *path, char **out_buf, size_t *out_size) {
 
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
+    if (size == -1) {
+        fclose(f);
+        return -1;
+    }
     rewind(f);
 
     char *data = malloc(size + 1);
@@ -252,7 +300,7 @@ char *prompt(const char *msg) {
 
     char *line = NULL;
     size_t cap = 0;
-    ssize_t len = getline(&line, &cap, stdin);
+    ssize_t len = utils_getline(&line, &cap, stdin);
     if (len < 0) {
         free(line);
         return NULL;
@@ -261,4 +309,17 @@ char *prompt(const char *msg) {
         line[len - 1] = '\0';
     }
     return line; // Caller muss free(line) rufen!
+}
+
+char *ms_to_timestamp(int64_t timestamp, char *buf, size_t len) {
+    time_t secs = timestamp / 1000;
+    struct tm *t = localtime(&secs);
+    if (!t) {
+        return NULL;
+    }
+
+    snprintf(buf, len, "%04d-%02d-%02d %02d:%02d", t->tm_year + 1900,
+             t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
+
+    return buf;
 }

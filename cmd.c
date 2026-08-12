@@ -5,15 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define MAX_COL_WIDTH 40
-
-static size_t safe_len(const char *s) { return s ? strlen(s) : 0; }
-
-static int int64_len(int64_t val) {
-    char buf[32];
-    return snprintf(buf, sizeof(buf), "%lld", (long long)val);
-}
 
 static void print_col(const char *s, size_t width) {
     if (!s)
@@ -62,8 +56,8 @@ int run_list() {
             w_token = safe_len(auths[i]->accessToken);
         if (safe_len(auths[i]->refreshToken) > w_refresh)
             w_refresh = safe_len(auths[i]->refreshToken);
-        if ((size_t)int64_len(auths[i]->expiresAt) > w_exp)
-            w_exp = (size_t)int64_len(auths[i]->expiresAt);
+        if ((size_t)safe_len("2026-01-01 00:00") > w_exp)
+            w_exp = (size_t)safe_len("2026-01-01 00:00");
     }
 
     if (w_token > MAX_COL_WIDTH)
@@ -112,8 +106,7 @@ int run_list() {
         printf("  ");
 
         char exp_buf[32];
-        snprintf(exp_buf, sizeof(exp_buf), "%lld",
-                 (long long)auths[i]->expiresAt);
+        ms_to_timestamp(auths[i]->expiresAt, exp_buf, sizeof(exp_buf));
         print_col(exp_buf, w_exp);
         printf("\n");
     }

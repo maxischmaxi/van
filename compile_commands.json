@@ -1,0 +1,110 @@
+[
+  {
+    "file": "main.c",
+    "arguments": [
+      "/usr/bin/cc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-g",
+      "-O0",
+      "-c",
+      "-o",
+      "main.o",
+      "main.c"
+    ],
+    "directory": "/stuff/programming/van",
+    "output": "main.o"
+  },
+  {
+    "file": "cJSON.c",
+    "arguments": [
+      "/usr/bin/cc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-g",
+      "-O0",
+      "-c",
+      "-o",
+      "cJSON.o",
+      "cJSON.c"
+    ],
+    "directory": "/stuff/programming/van",
+    "output": "cJSON.o"
+  },
+  {
+    "file": "claude.c",
+    "arguments": [
+      "/usr/bin/cc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-g",
+      "-O0",
+      "-c",
+      "-o",
+      "claude.o",
+      "claude.c"
+    ],
+    "directory": "/stuff/programming/van",
+    "output": "claude.o"
+  },
+  {
+    "file": "utils.c",
+    "arguments": [
+      "/usr/bin/cc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-g",
+      "-O0",
+      "-c",
+      "-o",
+      "utils.o",
+      "utils.c"
+    ],
+    "directory": "/stuff/programming/van",
+    "output": "utils.o"
+  },
+  {
+    "file": "db.c",
+    "arguments": [
+      "/usr/bin/cc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-g",
+      "-O0",
+      "-c",
+      "-o",
+      "db.o",
+      "db.c"
+    ],
+    "directory": "/stuff/programming/van",
+    "output": "db.o"
+  },
+  {
+    "file": "cmd.c",
+    "arguments": [
+      "/usr/bin/cc",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Wpedantic",
+      "-g",
+      "-O0",
+      "-c",
+      "-o",
+      "cmd.o",
+      "cmd.c"
+    ],
+    "directory": "/stuff/programming/van",
+    "output": "cmd.o"
+  }
+]

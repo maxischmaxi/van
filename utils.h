@@ -15,4 +15,7 @@ char *str_array_to_str(char **elements, size_t count, char *delimiter);
 cJSON *parse_credentials_file(char *path);
 bool prompt_yes_no(const char *msg);
 char *prompt(const char *msg);
+char *ms_to_timestamp(int64_t timestamp, char *buf, size_t len);
+int int64_len(int64_t val);
+size_t safe_len(const char *s);
 #endif
