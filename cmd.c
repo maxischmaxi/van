@@ -28,7 +28,7 @@ static void print_col(const char *s, size_t width) {
     }
 }
 
-int run_list() {
+int run_list(void) {
     InternalAuth **auths = NULL;
     size_t auth_len = 0;
     auths = get_all_claude_oauth_configs(&auth_len);
@@ -183,7 +183,7 @@ int run_add(ClaudeCredentials *current_cred) {
     return 0;
 }
 
-int run_delete() {
+int run_delete(void) {
     InternalAuth **auths = NULL;
     size_t auth_len = 0;
     auths = get_all_claude_oauth_configs(&auth_len);

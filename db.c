@@ -18,7 +18,7 @@ void free_internal_auth(InternalAuth *auth) {
     free(auth->name);
 }
 
-static sqlite3 *get_db() {
+static sqlite3 *get_db(void) {
     char *path = append_to_home("van/claude.db");
     if (!path) {
         return NULL;
@@ -324,7 +324,8 @@ InternalAuth *get_auth_by_id(uint64_t id) {
 }
 
 InternalAuth *get_auth_by_name(char *name) {
-    if (!name) return NULL;
+    if (!name)
+        return NULL;
 
     sqlite3 *db = get_db();
     if (db == NULL) {
