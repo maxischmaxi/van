@@ -32,11 +32,11 @@ jobs:
         run: make clean && make CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O2"
 
       - name: Strip binary
-        run: strip main
+        run: strip van
 
       - name: Package
         run: |
-          mv main ${{ matrix.artifact }}
+          mv van ${{ matrix.artifact }}
           tar czf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
 
       - name: Upload artifact
