@@ -6,4 +6,5 @@ int run_add(ClaudeCredentials *current_cred);
 int run_delete(void);
 int run_show(ClaudeCredentials *current_cred);
 int run_swap(ClaudeCredentials *current_cred);
+int run_completions(const char *shell);
 #endif

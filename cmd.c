@@ -362,8 +362,7 @@ int run_swap(ClaudeCredentials *current_cred) {
     new_cred.account.emailAddress = dup_str(internal_auth->emailAddress);
     new_cred.account.organizationUuid =
         dup_str(internal_auth->organizationUuid);
-    new_cred.account.hasExtraUsageEnabled =
-        internal_auth->hasExtraUsageEnabled;
+    new_cred.account.hasExtraUsageEnabled = internal_auth->hasExtraUsageEnabled;
     new_cred.account.billingType = dup_str(internal_auth->billingType);
     new_cred.account.accountCreatedAt =
         dup_str(internal_auth->accountCreatedAt);
@@ -440,5 +439,51 @@ cleanup_fail:
     free(auths);
     free(credentials_path);
     free(claude_path);
+    return 1;
+}
+
+int run_completions(const char *shell) {
+    if (strcmp(shell, "bash") == 0) {
+        printf("_van() {\n"
+               "   local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n"
+               "   if [[ $COMP_CWORD -eq 1 ]]; then\n"
+               "       COMPREPLY=( $(compgen -W \"list add delete show swap "
+               "completions\" -- \"$cur\") )\n"
+               "   fi\n"
+               "complete -F _van van\n");
+        return 0;
+    }
+
+    if (strcmp(shell, "zsh") == 0) {
+        printf("#compdef van\n"
+               "_van {\n"
+               "   local -a commands\n"
+               "   commands=(list add delete show swap completions)\n"
+               "   if [[ $CURRENT -eq 2 ]]; then\n"
+               "       _describe 'command' commands\n"
+               "   fi\n"
+               "}\n"
+               "_van \"$@\"\n");
+        return 0;
+    }
+
+    if (strcmp(shell, "fish") == 0) {
+        printf("complete -c van -f\n"
+               "complete -c van -n '__fish_use_subcommand' -a list -d "
+               "'List all stored credentials'\n"
+               "complete -c van -n '__fish_use_subcommand' -a add -d "
+               "'Add current credentials'\n"
+               "complete -c van -n '__fish_use_subcommand' -a delete -d "
+               "'Delete credentials'\n"
+               "complete -c van -n '__fish_use_subcommand' -a show -d "
+               "'Show current credentials'\n"
+               "complete -c van -n '__fish_use_subcommand' -a swap -d "
+               "'Swap config'\n"
+               "complete -c van -n '__fish_use_subcommand' -a completions -d "
+               "'Generate shell completions'\n");
+        return 0;
+    }
+
+    fprintf(stderr, "Unknown shell: %s (supported: bash, zsh, fish)\n", shell);
     return 1;
 }

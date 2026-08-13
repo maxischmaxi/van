@@ -4,7 +4,7 @@ CFLAGS  := -std=c11 -Wall -Wextra -Wpedantic -g -O0
 LDFLAGS := -lcurl
 
 # ===== Dateien =====
-TARGET := main
+TARGET := van
 SRC    := main.c cJSON.c claude.c sqlite3.c utils.c db.c cmd.c
 OBJ    := $(SRC:.c=.o)
 
