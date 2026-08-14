@@ -74,4 +74,5 @@ void free_claude_oauth_account(ClaudeOAuthAccount *a);
 int write_config_to_file(ClaudeCredentials *creds, char *path);
 int write_account_to_file(ClaudeOAuthAccount *account, char *path);
 char *fetch_account_email(const char *access_token);
+int refresh_oauth_token(ClaudeAiOauth *oauth);
 #endif

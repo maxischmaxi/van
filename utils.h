@@ -20,9 +20,9 @@
 //  3. static inline im Header = kein Linking, keine Multiple-Definition,
 //     wird vom Compiler inline eingefügt (zero overhead).
 
-__attribute__((format(printf, 4, 5)))
-static inline void log_err_impl(const char *file, int line, const char *func,
-                                const char *fmt, ...) {
+__attribute__((format(printf, 4, 5))) static inline void
+log_err_impl(const char *file, int line, const char *func, const char *fmt,
+             ...) {
     va_list ap;
     va_start(ap, fmt);
     fprintf(stderr, "[%s:%d] %s: ", file, line, func);
@@ -31,8 +31,8 @@ static inline void log_err_impl(const char *file, int line, const char *func,
     va_end(ap);
 }
 
-__attribute__((format(printf, 1, 2)))
-static inline void log_warn_impl(const char *fmt, ...) {
+__attribute__((format(printf, 1, 2))) static inline void
+log_warn_impl(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     fputs("[WARN] ", stderr);
@@ -41,8 +41,8 @@ static inline void log_warn_impl(const char *fmt, ...) {
     va_end(ap);
 }
 
-__attribute__((format(printf, 1, 2)))
-static inline void log_info_impl(const char *fmt, ...) {
+__attribute__((format(printf, 1, 2))) static inline void
+log_info_impl(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     fputs("[INFO] ", stdout);
@@ -51,7 +51,7 @@ static inline void log_info_impl(const char *fmt, ...) {
     va_end(ap);
 }
 
-#define LOG_ERR(...)  log_err_impl(__FILE__, __LINE__, __func__, __VA_ARGS__)
+#define LOG_ERR(...) log_err_impl(__FILE__, __LINE__, __func__, __VA_ARGS__)
 #define LOG_WARN(...) log_warn_impl(__VA_ARGS__)
 #define LOG_INFO(...) log_info_impl(__VA_ARGS__)
 
@@ -74,4 +74,5 @@ bool prompt_yes_no(const char *msg);
 char *prompt(const char *msg);
 char *ms_to_timestamp(int64_t timestamp, char *buf, size_t len);
 int int64_len(int64_t val);
+int64_t now_ms(void);
 #endif

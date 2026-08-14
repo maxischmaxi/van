@@ -181,17 +181,18 @@ int run_add(ClaudeCredentials *current_cred) {
                 prompt_yes_no("Account with this email already exists. do you "
                               "want to overwrite it?");
 
-            if (should_overwrite) {
-                uint64_t id = insert_auth(current_cred->claudeAiOauth,
-                                          current_cred->account);
-                if (id == 0) {
-                    LOG_ERR("failed to add new claude credentials");
-                    return -1;
-                }
-                LOG_INFO("inserted id: %llu", (unsigned long long)id);
+            if (!should_overwrite) {
+                LOG_INFO("nothing done");
+                return 0;
             }
 
-            LOG_INFO("nothing done");
+            if (update_auth_by_email(current_cred->claudeAiOauth,
+                                     current_cred->account, email) == 0) {
+                LOG_ERR("failed to update existing credentials");
+                return -1;
+            }
+
+            LOG_INFO("updated credentials for %s", email);
             return 0;
         }
 
@@ -339,6 +340,16 @@ int run_swap(ClaudeCredentials *current_cred) {
         return 1;
     }
 
+    if (current_cred->account.emailAddress) {
+        uint32_t updated = update_auth_by_email(
+            current_cred->claudeAiOauth, current_cred->account,
+            current_cred->account.emailAddress);
+        if (updated) {
+            LOG_INFO("Updated stored credentials for %s before swapping away",
+                     current_cred->account.emailAddress);
+        }
+    }
+
     ClaudeCredentials new_cred = {
         .claudeAiOauth =
             {
@@ -385,6 +396,27 @@ int run_swap(ClaudeCredentials *current_cred) {
             for (size_t i = 0; i < internal_auth->scopes_count; i++) {
                 new_cred.claudeAiOauth.scopes[i] =
                     dup_str(internal_auth->scopes[i]);
+            }
+        }
+    }
+
+    int refresh_result = refresh_oauth_token(&new_cred.claudeAiOauth);
+    if (refresh_result < 0) {
+        LOG_WARN("Could not refresh tokens for the target account");
+        LOG_WARN("If Claude Code reports 'session expired', re-authenticate "
+                 "with 'claude' and re-add this account.");
+    } else if (refresh_result == 1) {
+        LOG_INFO("Successfully refreshed tokens for the target account.");
+        if (internal_auth->emailAddress) {
+            uint32_t db_updated =
+                update_auth_by_email(new_cred.claudeAiOauth,
+                                     new_cred.account,
+                                     internal_auth->emailAddress);
+            if (!db_updated) {
+                LOG_WARN("Refreshed tokens were written to the credential "
+                         "files but could not be persisted to the database.");
+                LOG_WARN("The next swap to this account may need to refresh "
+                         "again.");
             }
         }
     }

@@ -1,4 +1,5 @@
 #include "db.h"
+#include "cJSON.h"
 #include "claude.h"
 #include "sqlite3.h"
 #include "utils.h"
@@ -128,6 +129,36 @@ static const char *const SQL_INSERT =
     "INSERT INTO claude_auth_credentials (%s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
     "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
+static const char *const SQL_UPDATE_BY_EMAIL =
+    "UPDATE claude_auth_credentials SET "
+    "  accessToken = ?, "
+    "  refreshToken = ?, "
+    "  expiresAt = ?, "
+    "  refreshTokenExpiresAt = ?, "
+    "  scopes = ?, "
+    "  subscriptionType = ?, "
+    "  rateLimitTier = ?, "
+    "  accountUuid = ?, "
+    "  emailAddress = ?, "
+    "  organizationUuid = ?, "
+    "  hasExtraUsageEnabled = ?, "
+    "  billingType = ?, "
+    "  accountCreatedAt = ?, "
+    "  subscriptionCreatedAt = ?, "
+    "  ccOnboardingFlags = ?, "
+    "  claudeCodeTrialEndsAt = ?, "
+    "  claudeCodeTrialDurationDays = ?, "
+    "  seatTier = ?, "
+    "  displayName = ?, "
+    "  profileFetchedAt = ?, "
+    "  organizationRole = ?, "
+    "  workspaceRole = ?, "
+    "  organizationName = ?, "
+    "  organizationType = ?, "
+    "  organizationRateLimitTier = ?, "
+    "  userRateLimitTier = ? "
+    "WHERE emailAddress = ?";
+
 static const char *const SQL_GET_BY_EMAIL =
     "SELECT %s FROM claude_auth_credentials WHERE emailAddress = ?";
 
@@ -191,11 +222,17 @@ static void claude_to_stmt(ClaudeAiOauth *oauth, ClaudeOAuthAccount *account,
     FIELDS_PRE_SCOPES(DO_BIND)
 
     {
-        char *scopes =
-            str_array_to_str(oauth->scopes, oauth->scopes_count, ",");
-        sqlite3_bind_text(stmt, idx++, scopes ? scopes : "", -1,
+        cJSON *scopes_arr = cJSON_CreateArray();
+        for (size_t i = 0; i < oauth->scopes_count; i++) {
+            cJSON_AddItemToArray(
+                scopes_arr,
+                cJSON_CreateString(oauth->scopes[i] ? oauth->scopes[i] : ""));
+        }
+        char *scopes_str = cJSON_PrintUnformatted(scopes_arr);
+        sqlite3_bind_text(stmt, idx++, scopes_str ? scopes_str : "[]", -1,
                           SQLITE_TRANSIENT);
-        free(scopes);
+        free(scopes_str);
+        cJSON_Delete(scopes_arr);
     }
 
     FIELDS_POST_SCOPES(DO_BIND)
@@ -218,10 +255,30 @@ static InternalAuth *sql_stmt_to_internal_auth(sqlite3_stmt *stmt) {
     {
         const unsigned char *scopes_str = sqlite3_column_text(stmt, col++);
         if (scopes_str) {
-            char *scopes_copy = dup_str((const char *)scopes_str);
-            if (scopes_copy) {
-                auth->scopes = str_split(scopes_copy, ',', &auth->scopes_count);
-                free(scopes_copy);
+            cJSON *arr = cJSON_Parse((const char *)scopes_str);
+            if (arr && cJSON_IsArray(arr)) {
+                auth->scopes_count = cJSON_GetArraySize(arr);
+                auth->scopes = malloc(auth->scopes_count * sizeof(char *));
+                if (auth->scopes) {
+                    size_t i = 0;
+                    cJSON *item;
+                    cJSON_ArrayForEach(item, arr) {
+                        auth->scopes[i] = cJSON_IsString(item)
+                                              ? dup_str(item->valuestring)
+                                              : NULL;
+                        i++;
+                    }
+                } else {
+                    auth->scopes_count = 0;
+                }
+                cJSON_Delete(arr);
+            } else {
+                cJSON_Delete(arr);
+                char *copy = dup_str((const char *)scopes_str);
+                if (copy) {
+                    auth->scopes = str_split(copy, ',', &auth->scopes_count);
+                    free(copy);
+                }
             }
         }
     }
@@ -482,4 +539,28 @@ InternalAuth *get_auth_by_email(char *email) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
     return auth;
+}
+
+uint32_t update_auth_by_email(ClaudeAiOauth auth, ClaudeOAuthAccount account,
+                              const char *email) {
+    if (!email)
+        return 0;
+    sqlite3 *db = get_db();
+    if (db == NULL)
+        return 0;
+    sqlite3_stmt *stmt;
+    if (sqlite3_prepare_v2(db, SQL_UPDATE_BY_EMAIL, -1, &stmt, NULL) !=
+        SQLITE_OK) {
+        sqlite3_close(db);
+        return 0;
+    }
+
+    claude_to_stmt(&auth, &account, stmt);
+    sqlite3_bind_text(stmt, 27, email, -1, SQLITE_TRANSIENT);
+
+    int rc = sqlite3_step(stmt);
+    int changes = sqlite3_changes(db);
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return (rc == SQLITE_DONE && changes > 0) ? 1 : 0;
 }

@@ -3,11 +3,18 @@
 #include "utils.h"
 #include <assert.h>
 #include <curl/curl.h>
+#include <curl/easy.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#define CLAUDE_CLIENT_ID "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+#define CLAUDE_TOKEN_URL_PRIMARY "https://platform.claude.com/v1/oauth/token"
+#define CLAUDE_TOKEN_URL_LEGACY "https://console.anthropic.com/v1/oauth/token"
+#define REFRESH_SKEW_MS 60000 // 60s Toleranz
 
 static DiscoveryState parse_discovery(cJSON *j) {
     DiscoveryState d = {0};
@@ -587,4 +594,136 @@ char *fetch_account_email(const char *access_token) {
     }
     cJSON_Delete(root);
     return result;
+}
+
+int refresh_oauth_token(ClaudeAiOauth *oauth) {
+    if (!oauth || !oauth->refreshToken || oauth->refreshToken[0] == '\0')
+        return -1;
+
+    if (oauth->expiresAt > now_ms() + REFRESH_SKEW_MS)
+        return 0;
+
+    if (oauth->refreshTokenExpiresAt > 0 &&
+        oauth->refreshTokenExpiresAt < now_ms()) {
+        LOG_ERR("Refresh token expired. Re-authenticate with 'claude' and "
+                "re-add this account.");
+        return -1;
+    }
+
+    cJSON *body = cJSON_CreateObject();
+    cJSON_AddStringToObject(body, "grant_type", "refresh_token");
+    cJSON_AddStringToObject(body, "refresh_token", oauth->refreshToken);
+    cJSON_AddStringToObject(body, "client_id", CLAUDE_CLIENT_ID);
+
+    if (oauth->scopes && oauth->scopes_count > 0) {
+        char *scopes_str =
+            str_array_to_str(oauth->scopes, oauth->scopes_count, " ");
+
+        if (scopes_str) {
+            cJSON_AddStringToObject(body, "scope", scopes_str);
+            free(scopes_str);
+        }
+    }
+
+    char *post_body = cJSON_PrintUnformatted(body);
+    cJSON_Delete(body);
+    if (!post_body)
+        return -1;
+
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        free(post_body);
+        return -1;
+    }
+
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers =
+        curl_slist_append(headers, "User-Agent: claude-cli (external, cli)");
+
+    struct response_buf buf = {0};
+    const char *urls[] = {CLAUDE_TOKEN_URL_PRIMARY, CLAUDE_TOKEN_URL_LEGACY};
+    long http_code = 0;
+    CURLcode res = CURLE_FAILED_INIT;
+
+    for (int i = 0; i < 2; i++) {
+        free(buf.data);
+        buf.data = NULL;
+        buf.size = 0;
+
+        curl_easy_reset(curl);
+        curl_easy_setopt(curl, CURLOPT_URL, urls[i]);
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_body);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+        res = curl_easy_perform(curl);
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+        if (res == CURLE_OK && (http_code == 404 || http_code == 405) && i == 0)
+            continue;
+        break;
+    }
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    free(post_body);
+
+    if (res != CURLE_OK || http_code != 200) {
+        free(buf.data);
+        LOG_ERR("Token refresh failed (HTTP %ld).", http_code);
+        if (http_code == 400 || http_code == 401) {
+            LOG_ERR("Refresh token is invalid or was rotated. Re-authenticate "
+                    "with 'claude' and re-add this account.");
+        }
+        return -1;
+    }
+
+    cJSON *root = cJSON_Parse(buf.data);
+    free(buf.data);
+    if (!root) {
+        LOG_ERR("Failed to parse refresh response");
+        return -1;
+    }
+
+    cJSON *access_token = cJSON_GetObjectItem(root, "access_token");
+    cJSON *refresh_token = cJSON_GetObjectItem(root, "refresh_token");
+    cJSON *expires_in = cJSON_GetObjectItem(root, "expires_in");
+    cJSON *scope = cJSON_GetObjectItem(root, "scope");
+
+    if (!cJSON_IsString(access_token)) {
+        cJSON_Delete(root);
+        LOG_ERR("Refresh response missing access_token.");
+        return -1;
+    }
+
+    free(oauth->accessToken);
+    oauth->accessToken = dup_str(access_token->valuestring);
+
+    if (cJSON_IsString(refresh_token) &&
+        refresh_token->valuestring[0] != '\0') {
+        free(oauth->refreshToken);
+        oauth->refreshToken = dup_str(refresh_token->valuestring);
+    }
+
+    int64_t exp_in =
+        cJSON_IsNumber(expires_in) ? (int64_t)expires_in->valuedouble : 28800;
+    oauth->expiresAt = now_ms() + exp_in * 1000;
+
+    if (cJSON_IsString(scope) && scope->valuestring[0] != '\0') {
+        for (size_t i = 0; i < oauth->scopes_count; i++)
+            free(oauth->scopes[i]);
+        free(oauth->scopes);
+
+        char *scopes_copy = dup_str(scope->valuestring);
+        if (scopes_copy) {
+            oauth->scopes = str_split(scopes_copy, ' ', &oauth->scopes_count);
+            free(scopes_copy);
+        }
+    }
+
+    cJSON_Delete(root);
+    return 1;
 }

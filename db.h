@@ -44,4 +44,6 @@ void free_internal_auth(InternalAuth *auth);
 uint32_t delete_auth(uint64_t id);
 InternalAuth *get_auth_by_id(uint64_t id);
 InternalAuth *get_auth_by_email(char *email);
+uint32_t update_auth_by_email(ClaudeAiOauth auth, ClaudeOAuthAccount account,
+                              const char *email);
 #endif

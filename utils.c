@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -321,4 +322,10 @@ char *ms_to_timestamp(int64_t timestamp, char *buf, size_t len) {
              t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min);
 
     return buf;
+}
+
+int64_t now_ms(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
 }
