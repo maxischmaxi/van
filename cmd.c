@@ -9,6 +9,35 @@
 
 #define MAX_COL_WIDTH 40
 
+static void cleanup_free(void *p) { free(*(void **)p); }
+
+#define AUTO_FREE __attribute__((cleanup(cleanup_free)))
+
+typedef struct {
+    InternalAuth **items;
+    size_t count;
+} AuthList;
+
+static void cleanup_auth_list(void *p) {
+    AuthList *a = (AuthList *)p;
+    for (size_t i = 0; i < a->count; i++) {
+        free_internal_auth(a->items[i]);
+        free(a->items[i]);
+    }
+    free(a->items);
+}
+
+static void cleanup_internal_auth(void *p) {
+    InternalAuth *a = *(InternalAuth **)p;
+    if (a) {
+        free_internal_auth(a);
+        free(a);
+    }
+}
+
+#define AUTO_AUTH_LIST __attribute__((cleanup(cleanup_auth_list)))
+#define AUTO_INTERNAL_AUTH __attribute__((cleanup(cleanup_internal_auth)))
+
 static void print_col(const char *s, size_t width) {
     if (!s)
         s = "";
@@ -28,12 +57,13 @@ static void print_col(const char *s, size_t width) {
     }
 }
 
-int run_list(void) {
-    InternalAuth **auths = NULL;
-    size_t auth_len = 0;
-    auths = get_all_claude_oauth_configs(&auth_len);
-    if (!auths) {
-        printf("failed to load credentials\n");
+int run_list(ClaudeCredentials *current_cred) {
+    (void)current_cred;
+
+    AUTO_AUTH_LIST AuthList auths = {0};
+    auths.items = get_all_claude_oauth_configs(&auths.count);
+    if (!auths.items) {
+        LOG_ERR("failed to load credentials");
         return 1;
     }
 
@@ -43,19 +73,19 @@ int run_list(void) {
     size_t w_refresh = strlen("Refresh Token");
     size_t w_exp = strlen("Expires");
 
-    for (size_t i = 0; i < auth_len; i++) {
+    for (size_t i = 0; i < auths.count; i++) {
         char id_buf[32];
         size_t id_len = (size_t)snprintf(id_buf, sizeof(id_buf), "%lld",
-                                         (long long)auths[i]->id);
+                                         (long long)auths.items[i]->id);
         if (id_len > w_id)
             w_id = id_len;
 
-        if (safe_len(auths[i]->emailAddress) > w_name)
-            w_name = safe_len(auths[i]->emailAddress);
-        if (safe_len(auths[i]->accessToken) > w_token)
-            w_token = safe_len(auths[i]->accessToken);
-        if (safe_len(auths[i]->refreshToken) > w_refresh)
-            w_refresh = safe_len(auths[i]->refreshToken);
+        if (safe_len(auths.items[i]->emailAddress) > w_name)
+            w_name = safe_len(auths.items[i]->emailAddress);
+        if (safe_len(auths.items[i]->accessToken) > w_token)
+            w_token = safe_len(auths.items[i]->accessToken);
+        if (safe_len(auths.items[i]->refreshToken) > w_refresh)
+            w_refresh = safe_len(auths.items[i]->refreshToken);
         if ((size_t)safe_len("2026-01-01 00:00") > w_exp)
             w_exp = (size_t)safe_len("2026-01-01 00:00");
     }
@@ -89,43 +119,41 @@ int run_list(void) {
         putchar('-');
     printf("\n");
 
-    for (size_t i = 0; i < auth_len; i++) {
+    for (size_t i = 0; i < auths.count; i++) {
         char id_buf[32];
-        snprintf(id_buf, sizeof(id_buf), "%lld", (long long)auths[i]->id);
+        snprintf(id_buf, sizeof(id_buf), "%lld", (long long)auths.items[i]->id);
         print_col(id_buf, w_id);
         printf("  ");
 
-        print_col(auths[i]->emailAddress ? auths[i]->emailAddress : "(none)",
+        print_col(auths.items[i]->emailAddress ? auths.items[i]->emailAddress
+                                               : "(none)",
                   w_name);
         printf("  ");
 
-        print_col(auths[i]->accessToken ? auths[i]->accessToken : "(none)",
+        print_col(auths.items[i]->accessToken ? auths.items[i]->accessToken
+                                              : "(none)",
                   w_token);
         printf("  ");
-        print_col(auths[i]->refreshToken ? auths[i]->refreshToken : "(none)",
+        print_col(auths.items[i]->refreshToken ? auths.items[i]->refreshToken
+                                               : "(none)",
                   w_refresh);
         printf("  ");
 
         char exp_buf[32];
-        ms_to_timestamp(auths[i]->expiresAt, exp_buf, sizeof(exp_buf));
+        ms_to_timestamp(auths.items[i]->expiresAt, exp_buf, sizeof(exp_buf));
         print_col(exp_buf, w_exp);
         printf("\n");
     }
 
-    printf("\n%zu credential(s)\n", auth_len);
-
-    for (size_t i = 0; i < auth_len; i++) {
-        free_internal_auth(auths[i]);
-        free(auths[i]);
-    }
-    free(auths);
+    printf("\n%zu credential(s)\n", auths.count);
     return 0;
 }
 
 int run_add(ClaudeCredentials *current_cred) {
-    char *email = fetch_account_email(current_cred->claudeAiOauth.accessToken);
+    AUTO_FREE char *email =
+        fetch_account_email(current_cred->claudeAiOauth.accessToken);
     if (!email) {
-        printf("could not fetch account email\n");
+        LOG_ERR("could not fetch account email");
         return -1;
     }
 
@@ -133,10 +161,9 @@ int run_add(ClaudeCredentials *current_cred) {
                           "Do you want to add the current claude code account "
                           "with email \"%s\" to your credentials database?",
                           email);
-    char *add_prompt = malloc(needed + 1);
+    AUTO_FREE char *add_prompt = malloc(needed + 1);
     if (!add_prompt) {
-        printf("failed to allocate prompt string\n");
-        free(email);
+        LOG_ERR("failed to allocate prompt string");
         return -1;
     }
     snprintf(add_prompt, needed + 1,
@@ -145,14 +172,11 @@ int run_add(ClaudeCredentials *current_cred) {
              email);
 
     bool should_add = prompt_yes_no(add_prompt);
-    free(add_prompt);
-
     if (should_add) {
-        InternalAuth *existing_auth = get_auth_by_email(email);
+        AUTO_FREE InternalAuth *existing_auth = get_auth_by_email(email);
 
         if (existing_auth) {
             free_internal_auth(existing_auth);
-            free(existing_auth);
             bool should_overwrite =
                 prompt_yes_no("Account with this email already exists. do you "
                               "want to overwrite it?");
@@ -161,53 +185,51 @@ int run_add(ClaudeCredentials *current_cred) {
                 uint64_t id = insert_auth(current_cred->claudeAiOauth,
                                           current_cred->account);
                 if (id == 0) {
-                    printf("failed to add new claude credentials\n");
-                    free(email);
+                    LOG_ERR("failed to add new claude credentials");
                     return -1;
                 }
-                printf("inserted id: %llu\n", (unsigned long long)id);
+                LOG_INFO("inserted id: %llu", (unsigned long long)id);
             }
 
-            printf("nothing done\n");
-            free(email);
+            LOG_INFO("nothing done");
             return 0;
         }
 
         uint64_t id =
             insert_auth(current_cred->claudeAiOauth, current_cred->account);
         if (id == 0) {
-            printf("failed to add new claude credentials\n");
-            free(email);
+            LOG_ERR("failed to add new claude credentials");
             return -1;
         }
     }
 
-    free(email);
     return 0;
 }
 
-int run_delete(void) {
-    InternalAuth **auths = NULL;
-    size_t auth_len = 0;
-    auths = get_all_claude_oauth_configs(&auth_len);
-    if (!auths) {
-        printf("failed to load credentials\n");
+int run_delete(ClaudeCredentials *current_cred) {
+    (void)current_cred;
+
+    AUTO_AUTH_LIST AuthList auths = {0};
+    auths.items = get_all_claude_oauth_configs(&auths.count);
+    if (!auths.items) {
+        LOG_ERR("failed to load credentials");
         return 1;
     }
 
     printf("Delete one of the following credentials:\n\n");
 
-    for (size_t i = 0; i < auth_len; i++) {
-        printf("%lld - %s\n", (long long)auths[i]->id,
-               auths[i]->emailAddress ? auths[i]->emailAddress : "(none)");
+    for (size_t i = 0; i < auths.count; i++) {
+        printf("%lld - %s\n", (long long)auths.items[i]->id,
+               auths.items[i]->emailAddress ? auths.items[i]->emailAddress
+                                            : "(none)");
     }
 
     printf("\n");
 
-    char *id = prompt("ID to delete: ");
+    AUTO_FREE char *id = prompt("ID to delete: ");
     if (!id) {
-        fprintf(stderr, "The ID you provided is not valid.\n");
-        goto cleanup_fail;
+        LOG_ERR("The ID you provided is not valid.");
+        return 1;
     }
 
     errno = 0;
@@ -215,40 +237,25 @@ int run_delete(void) {
     unsigned long long val = strtoull(id, &end, 10);
 
     if (errno == ERANGE) {
-        fprintf(stderr, "The ID you provided is out of range.\n");
-        goto cleanup_fail;
+        LOG_ERR("The ID you provided is out of range.");
+        return 1;
     }
     if (end == id) {
-        fprintf(stderr, "The ID you provided has to be numerical.\n");
-        goto cleanup_fail;
+        LOG_ERR("The ID you provided has to be numerical.");
+        return 1;
     }
     if (*end != '\0') {
-        fprintf(stderr, "The ID you provided has trailing garbage.\n");
-        goto cleanup_fail;
+        LOG_ERR("The ID you provided has trailing garbage.");
+        return 1;
     }
 
     if (delete_auth((uint64_t)val) == 0) {
-        fprintf(stderr, "Failed to delete database entry.\n");
-        goto cleanup_fail;
+        LOG_ERR("Failed to delete database entry.");
+        return 1;
     }
 
-    printf("Deleted credential with ID %llu.\n", (unsigned long long)val);
-    free(id);
-    for (size_t i = 0; i < auth_len; i++) {
-        free_internal_auth(auths[i]);
-        free(auths[i]);
-    }
-    free(auths);
+    LOG_INFO("Deleted credential with ID %llu.", (unsigned long long)val);
     return 0;
-
-cleanup_fail:
-    free(id);
-    for (size_t i = 0; i < auth_len; i++) {
-        free_internal_auth(auths[i]);
-        free(auths[i]);
-    }
-    free(auths);
-    return 1;
 }
 
 int run_show(ClaudeCredentials *current_cred) {
@@ -260,54 +267,52 @@ int run_show(ClaudeCredentials *current_cred) {
                                    ? current_cred->claudeAiOauth.rateLimitTier
                                    : "(none)");
 
-    char *email = fetch_account_email(current_cred->claudeAiOauth.accessToken);
+    AUTO_FREE char *email =
+        fetch_account_email(current_cred->claudeAiOauth.accessToken);
     if (email) {
         printf("Logged in as: %s\n", email);
-        free(email);
     } else {
-        printf("Failed to fetch account info.\n");
+        LOG_ERR("Failed to fetch account info.");
     }
 
     return 0;
 }
 
 int run_swap(ClaudeCredentials *current_cred) {
-    char *credentials_path = append_to_home(".claude/.credentials.json");
+    AUTO_FREE char *credentials_path =
+        append_to_home(".claude/.credentials.json");
     if (credentials_path == NULL) {
-        printf("failed to load credentials\n");
+        LOG_ERR("failed to load credentials");
         return 1;
     }
 
-    char *claude_path = append_to_home(".claude.json");
+    AUTO_FREE char *claude_path = append_to_home(".claude.json");
     if (claude_path == NULL) {
-        printf("failed to load credentials\n");
-        free(credentials_path);
+        LOG_ERR("failed to load credentials");
         return 1;
     }
 
-    InternalAuth **auths = NULL;
-    size_t auth_len = 0;
-    auths = get_all_claude_oauth_configs(&auth_len);
-    if (!auths) {
-        printf("failed to load credentials\n");
-        free(credentials_path);
-        free(claude_path);
+    AUTO_AUTH_LIST AuthList auths = {0};
+    auths.items = get_all_claude_oauth_configs(&auths.count);
+    if (!auths.items) {
+        LOG_ERR("failed to load credentials");
         return 1;
     }
 
     printf("Swap your current config with one of the following:\n\n");
 
-    for (size_t i = 0; i < auth_len; i++) {
-        printf("%lld - %s\n", (long long)auths[i]->id,
-               auths[i]->emailAddress ? auths[i]->emailAddress : "(none)");
+    for (size_t i = 0; i < auths.count; i++) {
+        printf("%lld - %s\n", (long long)auths.items[i]->id,
+               auths.items[i]->emailAddress ? auths.items[i]->emailAddress
+                                            : "(none)");
     }
 
     printf("\n");
 
-    char *id = prompt("ID to swap with: ");
+    AUTO_FREE char *id = prompt("ID to swap with: ");
     if (!id) {
-        fprintf(stderr, "The ID you provided is not valid.\n");
-        goto cleanup_fail;
+        LOG_ERR("The ID you provided is not valid.");
+        return 1;
     }
 
     errno = 0;
@@ -315,34 +320,62 @@ int run_swap(ClaudeCredentials *current_cred) {
     unsigned long long val = strtoull(id, &end, 10);
 
     if (errno == ERANGE) {
-        fprintf(stderr, "The ID you provided is out of range.\n");
-        goto cleanup_fail;
+        LOG_ERR("The ID you provided is out of range.");
+        return 1;
     }
     if (end == id) {
-        fprintf(stderr, "The ID you provided has to be numerical.\n");
-        goto cleanup_fail;
+        LOG_ERR("The ID you provided has to be numerical.");
+        return 1;
     }
     if (*end != '\0') {
-        fprintf(stderr, "The ID you provided has trailing garbage.\n");
-        goto cleanup_fail;
+        LOG_ERR("The ID you provided has trailing garbage.");
+        return 1;
     }
 
-    InternalAuth *internal_auth = get_auth_by_id((uint64_t)val);
+    AUTO_INTERNAL_AUTH InternalAuth *internal_auth =
+        get_auth_by_id((uint64_t)val);
     if (!internal_auth) {
-        fprintf(stderr, "Failed to find the selected credentials.\n");
-        goto cleanup_fail;
+        LOG_ERR("Failed to find the selected credentials.");
+        return 1;
     }
 
-    ClaudeCredentials new_cred = {0};
-    new_cred.claudeAiOauth.accessToken = dup_str(internal_auth->accessToken);
-    new_cred.claudeAiOauth.refreshToken = dup_str(internal_auth->refreshToken);
-    new_cred.claudeAiOauth.expiresAt = internal_auth->expiresAt;
-    new_cred.claudeAiOauth.refreshTokenExpiresAt =
-        internal_auth->refreshTokenExpiresAt;
-    new_cred.claudeAiOauth.subscriptionType =
-        dup_str(internal_auth->subscriptionType);
-    new_cred.claudeAiOauth.rateLimitTier =
-        dup_str(internal_auth->rateLimitTier);
+    ClaudeCredentials new_cred = {
+        .claudeAiOauth =
+            {
+                .accessToken = dup_str(internal_auth->accessToken),
+                .refreshToken = dup_str(internal_auth->refreshToken),
+                .expiresAt = internal_auth->expiresAt,
+                .refreshTokenExpiresAt = internal_auth->refreshTokenExpiresAt,
+                .subscriptionType = dup_str(internal_auth->subscriptionType),
+                .rateLimitTier = dup_str(internal_auth->rateLimitTier),
+            },
+        .account =
+            {
+                .accountUuid = dup_str(internal_auth->accountUuid),
+                .emailAddress = dup_str(internal_auth->emailAddress),
+                .organizationUuid = dup_str(internal_auth->organizationUuid),
+                .hasExtraUsageEnabled = internal_auth->hasExtraUsageEnabled,
+                .billingType = dup_str(internal_auth->billingType),
+                .accountCreatedAt = dup_str(internal_auth->accountCreatedAt),
+                .subscriptionCreatedAt =
+                    dup_str(internal_auth->subscriptionCreatedAt),
+                .ccOnboardingFlags = dup_str(internal_auth->ccOnboardingFlags),
+                .claudeCodeTrialEndsAt =
+                    dup_str(internal_auth->claudeCodeTrialEndsAt),
+                .claudeCodeTrialDurationDays =
+                    dup_str(internal_auth->claudeCodeTrialDurationDays),
+                .seatTier = dup_str(internal_auth->seatTier),
+                .displayName = dup_str(internal_auth->displayName),
+                .profileFetchedAt = internal_auth->profileFetchedAt,
+                .organizationRole = dup_str(internal_auth->organizationRole),
+                .workspaceRole = dup_str(internal_auth->workspaceRole),
+                .organizationName = dup_str(internal_auth->organizationName),
+                .organizationType = dup_str(internal_auth->organizationType),
+                .organizationRateLimitTier =
+                    dup_str(internal_auth->organizationRateLimitTier),
+                .userRateLimitTier = dup_str(internal_auth->userRateLimitTier),
+            },
+        .mcpOAuth = current_cred->mcpOAuth};
 
     if (internal_auth->scopes && internal_auth->scopes_count > 0) {
         new_cred.claudeAiOauth.scopes =
@@ -355,39 +388,6 @@ int run_swap(ClaudeCredentials *current_cred) {
             }
         }
     }
-
-    new_cred.mcpOAuth = current_cred->mcpOAuth;
-
-    new_cred.account.accountUuid = dup_str(internal_auth->accountUuid);
-    new_cred.account.emailAddress = dup_str(internal_auth->emailAddress);
-    new_cred.account.organizationUuid =
-        dup_str(internal_auth->organizationUuid);
-    new_cred.account.hasExtraUsageEnabled = internal_auth->hasExtraUsageEnabled;
-    new_cred.account.billingType = dup_str(internal_auth->billingType);
-    new_cred.account.accountCreatedAt =
-        dup_str(internal_auth->accountCreatedAt);
-    new_cred.account.subscriptionCreatedAt =
-        dup_str(internal_auth->subscriptionCreatedAt);
-    new_cred.account.ccOnboardingFlags =
-        dup_str(internal_auth->ccOnboardingFlags);
-    new_cred.account.claudeCodeTrialEndsAt =
-        dup_str(internal_auth->claudeCodeTrialEndsAt);
-    new_cred.account.claudeCodeTrialDurationDays =
-        dup_str(internal_auth->claudeCodeTrialDurationDays);
-    new_cred.account.seatTier = dup_str(internal_auth->seatTier);
-    new_cred.account.displayName = dup_str(internal_auth->displayName);
-    new_cred.account.profileFetchedAt = internal_auth->profileFetchedAt;
-    new_cred.account.organizationRole =
-        dup_str(internal_auth->organizationRole);
-    new_cred.account.workspaceRole = dup_str(internal_auth->workspaceRole);
-    new_cred.account.organizationName =
-        dup_str(internal_auth->organizationName);
-    new_cred.account.organizationType =
-        dup_str(internal_auth->organizationType);
-    new_cred.account.organizationRateLimitTier =
-        dup_str(internal_auth->organizationRateLimitTier);
-    new_cred.account.userRateLimitTier =
-        dup_str(internal_auth->userRateLimitTier);
 
     int rc = write_config_to_file(&new_cred, credentials_path);
     int rc2 = 0;
@@ -404,42 +404,18 @@ int run_swap(ClaudeCredentials *current_cred) {
     free(new_cred.claudeAiOauth.scopes);
     free_claude_oauth_account(&new_cred.account);
 
-    free_internal_auth(internal_auth);
-    free(internal_auth);
-
     if (rc != 0) {
-        fprintf(stderr, "Failed to write credentials to file.\n");
-        goto cleanup_fail;
+        LOG_ERR("Failed to write credentials to file.");
+        return 1;
     }
     if (rc2 != 0) {
-        fprintf(stderr, "Failed to write account info to file.\n");
-        goto cleanup_fail;
+        LOG_ERR("Failed to write account info to file.");
+        return 1;
     }
 
-    printf("Swapped config successfully.\n");
+    LOG_INFO("Swapped config successfully.");
 
-    free(id);
-    free_claude_credentials(current_cred);
-    for (size_t i = 0; i < auth_len; i++) {
-        free_internal_auth(auths[i]);
-        free(auths[i]);
-    }
-    free(auths);
-    free(credentials_path);
-    free(claude_path);
     return 0;
-
-cleanup_fail:
-    free(id);
-    free_claude_credentials(current_cred);
-    for (size_t i = 0; i < auth_len; i++) {
-        free_internal_auth(auths[i]);
-        free(auths[i]);
-    }
-    free(auths);
-    free(credentials_path);
-    free(claude_path);
-    return 1;
 }
 
 int run_completions(const char *shell) {
@@ -484,6 +460,6 @@ int run_completions(const char *shell) {
         return 0;
     }
 
-    fprintf(stderr, "Unknown shell: %s (supported: bash, zsh, fish)\n", shell);
+    LOG_ERR("Unknown shell: %s (supported: bash, zsh, fish)", shell);
     return 1;
 }

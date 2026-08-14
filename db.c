@@ -7,6 +7,63 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define FIELDS_PRE_SCOPES(X)                                                   \
+    X(STRING, accessToken, oauth)                                              \
+    X(STRING, refreshToken, oauth)                                             \
+    X(INT64, expiresAt, oauth)                                                 \
+    X(INT64, refreshTokenExpiresAt, oauth)
+
+#define FIELDS_POST_SCOPES(X)                                                  \
+    X(STRING, subscriptionType, oauth)                                         \
+    X(STRING, rateLimitTier, oauth)                                            \
+    X(STRING, accountUuid, account)                                            \
+    X(STRING, emailAddress, account)                                           \
+    X(STRING, organizationUuid, account)                                       \
+    X(BOOL, hasExtraUsageEnabled, account)                                     \
+    X(STRING, billingType, account)                                            \
+    X(STRING, accountCreatedAt, account)                                       \
+    X(STRING, subscriptionCreatedAt, account)                                  \
+    X(STRING, ccOnboardingFlags, account)                                      \
+    X(STRING, claudeCodeTrialEndsAt, account)                                  \
+    X(STRING, claudeCodeTrialDurationDays, account)                            \
+    X(STRING, seatTier, account)                                               \
+    X(STRING, displayName, account)                                            \
+    X(INT64, profileFetchedAt, account)                                        \
+    X(STRING, organizationRole, account)                                       \
+    X(STRING, workspaceRole, account)                                          \
+    X(STRING, organizationName, account)                                       \
+    X(STRING, organizationType, account)                                       \
+    X(STRING, organizationRateLimitTier, account)                              \
+    X(STRING, userRateLimitTier, account)
+
+#define COUNT_FIELD(type, name, src) +1
+#define FIELD_COUNT_PRE (0 FIELDS_PRE_SCOPES(COUNT_FIELD))
+#define FIELD_COUNT_POST (0 FIELDS_POST_SCOPES(COUNT_FIELD))
+#define TOTAL_BIND_PARAMS (FIELD_COUNT_PRE + 1 + FIELD_COUNT_POST)
+
+_Static_assert(
+    TOTAL_BIND_PARAMS == 26,
+    "X-Macro Feldanzahl stimmt nicht mit SQL-Platzhalter-Anzahl überein");
+
+#define FREE_STRING(p) free(p)
+#define FREE_INT64(p) (void)(p)
+#define FREE_BOOL(p) (void)(p)
+
+#define DO_FREE(type, name, src) FREE_##type(auth->name);
+
+#define BIND_STRING(s, i, v) sqlite3_bind_text(s, i, v, -1, SQLITE_TRANSIENT)
+#define BIND_INT64(s, i, v) sqlite3_bind_int64(s, i, v)
+#define BIND_BOOL(s, i, v) sqlite3_bind_int(s, i, v ? 1 : 0)
+
+#define DO_BIND(type, name, src) BIND_##type(stmt, idx++, src->name);
+
+#define READ_STRING(s, c, f)                                                   \
+    auth->f = dup_str((const char *)sqlite3_column_text(s, c))
+#define READ_INT64(s, c, f) auth->f = sqlite3_column_int64(s, c)
+#define READ_BOOL(s, c, f) auth->f = sqlite3_column_int(s, c) != 0
+
+#define DO_READ(type, name, src) READ_##type(stmt, col++, name);
+
 static const char *ALL_COLUMNS = "id, "
                                  "accessToken, "
                                  "refreshToken, "
@@ -127,49 +184,21 @@ static char *build_query_all_columns(const char *tmpl) {
     return query;
 }
 
-static void claude_to_stmt(ClaudeAiOauth *auth, ClaudeOAuthAccount *account,
+static void claude_to_stmt(ClaudeAiOauth *oauth, ClaudeOAuthAccount *account,
                            sqlite3_stmt *stmt) {
-    char *scopes = str_array_to_str(auth->scopes, auth->scopes_count, ",");
+    int idx = 1;
 
-    sqlite3_bind_text(stmt, 1, auth->accessToken, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, auth->refreshToken, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 3, auth->expiresAt);
-    sqlite3_bind_int64(stmt, 4, auth->refreshTokenExpiresAt);
-    sqlite3_bind_text(stmt, 5, scopes ? scopes : "", -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 6, auth->subscriptionType, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 7, auth->rateLimitTier, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 8, account->accountUuid, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 9, account->emailAddress, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 10, account->organizationUuid, -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 11, account->hasExtraUsageEnabled == false ? 0 : 1);
-    sqlite3_bind_text(stmt, 12, account->billingType, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 13, account->accountCreatedAt, -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 14, account->subscriptionCreatedAt, -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 15, account->ccOnboardingFlags, -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 16, account->claudeCodeTrialEndsAt, -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 17, account->claudeCodeTrialDurationDays, -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 18, account->seatTier, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 19, account->displayName, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 20, account->profileFetchedAt);
-    sqlite3_bind_text(stmt, 21, account->organizationRole, -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 22, account->workspaceRole, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 23, account->organizationName, -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 24, account->organizationType, -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 25, account->organizationRateLimitTier, -1,
-                      SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 26, account->userRateLimitTier, -1,
-                      SQLITE_TRANSIENT);
+    FIELDS_PRE_SCOPES(DO_BIND)
 
-    free(scopes);
+    {
+        char *scopes =
+            str_array_to_str(oauth->scopes, oauth->scopes_count, ",");
+        sqlite3_bind_text(stmt, idx++, scopes ? scopes : "", -1,
+                          SQLITE_TRANSIENT);
+        free(scopes);
+    }
+
+    FIELDS_POST_SCOPES(DO_BIND)
 }
 
 static InternalAuth *sql_stmt_to_internal_auth(sqlite3_stmt *stmt) {
@@ -180,84 +209,35 @@ static InternalAuth *sql_stmt_to_internal_auth(sqlite3_stmt *stmt) {
 
     memset(auth, 0, sizeof(InternalAuth));
 
-    auth->id = sqlite3_column_int64(stmt, 0);
-    auth->accessToken = dup_str((const char *)sqlite3_column_text(stmt, 1));
-    auth->refreshToken = dup_str((const char *)sqlite3_column_text(stmt, 2));
-    auth->expiresAt = sqlite3_column_int64(stmt, 3);
-    auth->refreshTokenExpiresAt = sqlite3_column_int64(stmt, 4);
-    auth->subscriptionType =
-        dup_str((const char *)sqlite3_column_text(stmt, 6));
-    auth->rateLimitTier = dup_str((const char *)sqlite3_column_text(stmt, 7));
-    auth->accountUuid = dup_str((const char *)sqlite3_column_text(stmt, 8));
-    auth->emailAddress = dup_str((const char *)sqlite3_column_text(stmt, 9));
-    auth->organizationUuid =
-        dup_str((const char *)sqlite3_column_text(stmt, 10));
-    auth->hasExtraUsageEnabled = sqlite3_column_int(stmt, 11) != 0;
-    auth->billingType = dup_str((const char *)sqlite3_column_text(stmt, 12));
-    auth->accountCreatedAt =
-        dup_str((const char *)sqlite3_column_text(stmt, 13));
-    auth->subscriptionCreatedAt =
-        dup_str((const char *)sqlite3_column_text(stmt, 14));
-    auth->ccOnboardingFlags =
-        dup_str((const char *)sqlite3_column_text(stmt, 15));
-    auth->claudeCodeTrialEndsAt =
-        dup_str((const char *)sqlite3_column_text(stmt, 16));
-    auth->claudeCodeTrialDurationDays =
-        dup_str((const char *)sqlite3_column_text(stmt, 17));
-    auth->seatTier = dup_str((const char *)sqlite3_column_text(stmt, 18));
-    auth->displayName = dup_str((const char *)sqlite3_column_text(stmt, 19));
-    auth->profileFetchedAt = sqlite3_column_int64(stmt, 20);
-    auth->organizationRole =
-        dup_str((const char *)sqlite3_column_text(stmt, 21));
-    auth->workspaceRole = dup_str((const char *)sqlite3_column_text(stmt, 22));
-    auth->organizationName =
-        dup_str((const char *)sqlite3_column_text(stmt, 23));
-    auth->organizationType =
-        dup_str((const char *)sqlite3_column_text(stmt, 24));
-    auth->organizationRateLimitTier =
-        dup_str((const char *)sqlite3_column_text(stmt, 25));
-    auth->userRateLimitTier =
-        dup_str((const char *)sqlite3_column_text(stmt, 26));
+    int col = 0;
 
-    const unsigned char *scopes_str = sqlite3_column_text(stmt, 5);
+    auth->id = sqlite3_column_int64(stmt, col++);
 
-    if (scopes_str) {
-        char *scopes_copy = dup_str((const char *)scopes_str);
-        if (scopes_copy) {
-            auth->scopes = str_split(scopes_copy, ',', &auth->scopes_count);
-            free(scopes_copy);
+    FIELDS_PRE_SCOPES(DO_READ)
+
+    {
+        const unsigned char *scopes_str = sqlite3_column_text(stmt, col++);
+        if (scopes_str) {
+            char *scopes_copy = dup_str((const char *)scopes_str);
+            if (scopes_copy) {
+                auth->scopes = str_split(scopes_copy, ',', &auth->scopes_count);
+                free(scopes_copy);
+            }
         }
     }
+
+    FIELDS_POST_SCOPES(DO_READ)
 
     return auth;
 }
 
 void free_internal_auth(InternalAuth *auth) {
-    free(auth->accessToken);
-    free(auth->refreshToken);
-    free(auth->subscriptionType);
-    free(auth->rateLimitTier);
+    FIELDS_PRE_SCOPES(DO_FREE)
+    FIELDS_POST_SCOPES(DO_FREE)
+
     for (size_t i = 0; i < auth->scopes_count; i++)
         free(auth->scopes[i]);
     free(auth->scopes);
-
-    free(auth->accountUuid);
-    free(auth->emailAddress);
-    free(auth->organizationUuid);
-    free(auth->billingType);
-    free(auth->accountCreatedAt);
-    free(auth->subscriptionCreatedAt);
-    free(auth->ccOnboardingFlags);
-    free(auth->claudeCodeTrialEndsAt);
-    free(auth->claudeCodeTrialDurationDays);
-    free(auth->seatTier);
-    free(auth->displayName);
-    free(auth->organizationRole);
-    free(auth->workspaceRole);
-    free(auth->organizationName);
-    free(auth->organizationType);
-    free(auth->organizationRateLimitTier);
-    free(auth->userRateLimitTier);
 }
 
 static sqlite3 *get_db(void) {

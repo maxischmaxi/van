@@ -1,6 +1,7 @@
 #include "claude.h"
 #include "cJSON.h"
 #include "utils.h"
+#include <assert.h>
 #include <curl/curl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -190,24 +191,22 @@ static ClaudeAiOauth parse_claude_ai_oauth(cJSON *j) {
 ClaudeCredentials *parse_claude_credentials(void) {
     char *credentials_path = append_to_home(".claude/.credentials.json");
     if (credentials_path == NULL) {
-        fprintf(stderr, "Could not find claude credentials.\n");
-        fprintf(stderr,
-                "Please install claude code and sign in to use this tool.\n");
+        LOG_ERR("Could not find claude credentials.");
+        LOG_ERR("Please install claude code and sign in to use this tool.");
         return NULL;
     }
 
     char *claude_path = append_to_home(".claude.json");
     if (claude_path == NULL) {
-        fprintf(stderr, "Could not find claude.json in home directory\n");
-        fprintf(stderr,
-                "Please install claude code and sign in to use this tool.\n");
+        LOG_ERR("Could not find claude.json in home directory");
+        LOG_ERR("Please install claude code and sign in to use this tool.");
         free(credentials_path);
         return NULL;
     }
 
     cJSON *credentials_root = parse_json_file(credentials_path);
     if (credentials_root == NULL) {
-        fprintf(stderr, "Failed to parse %s", credentials_path);
+        LOG_ERR("Failed to parse %s", credentials_path);
         free(credentials_path);
         free(claude_path);
         return NULL;
@@ -215,7 +214,7 @@ ClaudeCredentials *parse_claude_credentials(void) {
 
     cJSON *claude_root = parse_json_file(claude_path);
     if (claude_root == NULL) {
-        fprintf(stderr, "Failed to parse %s", claude_path);
+        LOG_ERR("Failed to parse %s", claude_path);
         cJSON_Delete(credentials_root);
         free(credentials_path);
         free(claude_path);
@@ -393,8 +392,7 @@ static cJSON *build_account_json(ClaudeOAuthAccount *a) {
                             a->emailAddress ? a->emailAddress : "");
     cJSON_AddStringToObject(obj, "organizationUuid",
                             a->organizationUuid ? a->organizationUuid : "");
-    cJSON_AddBoolToObject(obj, "hasExtraUsageEnabled",
-                          a->hasExtraUsageEnabled);
+    cJSON_AddBoolToObject(obj, "hasExtraUsageEnabled", a->hasExtraUsageEnabled);
     cJSON_AddStringToObject(obj, "billingType",
                             a->billingType ? a->billingType : "");
     cJSON_AddStringToObject(obj, "accountCreatedAt",
@@ -447,14 +445,12 @@ static cJSON *build_account_json(ClaudeOAuthAccount *a) {
                             a->organizationName ? a->organizationName : "");
     cJSON_AddStringToObject(obj, "organizationType",
                             a->organizationType ? a->organizationType : "");
-    cJSON_AddStringToObject(obj, "organizationRateLimitTier",
-                            a->organizationRateLimitTier
-                                ? a->organizationRateLimitTier
-                                : "");
+    cJSON_AddStringToObject(
+        obj, "organizationRateLimitTier",
+        a->organizationRateLimitTier ? a->organizationRateLimitTier : "");
 
     if (a->userRateLimitTier)
-        cJSON_AddStringToObject(obj, "userRateLimitTier",
-                                a->userRateLimitTier);
+        cJSON_AddStringToObject(obj, "userRateLimitTier", a->userRateLimitTier);
     else
         cJSON_AddNullToObject(obj, "userRateLimitTier");
 
@@ -476,8 +472,7 @@ int write_account_to_file(ClaudeOAuthAccount *account, char *path) {
         cJSON_Delete(existing);
     }
 
-    cJSON_AddItemToObject(root, "oauthAccount",
-                          build_account_json(account));
+    cJSON_AddItemToObject(root, "oauthAccount", build_account_json(account));
 
     char *json_str = cJSON_Print(root);
     cJSON_Delete(root);

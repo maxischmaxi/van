@@ -11,8 +11,6 @@
 #include <time.h>
 #include <unistd.h>
 
-size_t safe_len(const char *s) { return s ? strlen(s) : 0; }
-
 int int64_len(int64_t val) {
     char buf[32];
     return snprintf(buf, sizeof(buf), "%lld", (long long)val);
@@ -89,7 +87,8 @@ char *append_to_home(char *suffix) {
     return path;
 }
 
-int read_file(const char *path, char **out_buf, size_t *out_size) {
+int read_file(const char *restrict path, char **restrict out_buf,
+              size_t *restrict out_size) {
     *out_buf = NULL;
     *out_size = 0;
 
