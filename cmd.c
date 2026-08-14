@@ -456,7 +456,7 @@ int run_completions(const char *shell) {
 
     if (strcmp(shell, "zsh") == 0) {
         printf("#compdef van\n"
-               "_van {\n"
+               "_van() {\n"
                "   local -a commands\n"
                "   commands=(list add delete show swap completions)\n"
                "   if [[ $CURRENT -eq 2 ]]; then\n"
